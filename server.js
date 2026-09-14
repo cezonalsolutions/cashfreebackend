@@ -11,7 +11,7 @@ const PORT = process.env.PORT || 5000;
 
 
 /* =====================================================
-   CASHFREE ENVIRONMENT
+   CASHFREE CONFIG
 ===================================================== */
 
 const CASHFREE_APP_ID =
@@ -19,6 +19,17 @@ const CASHFREE_APP_ID =
 
 const CASHFREE_SECRET_KEY =
   process.env.CASHFREE_SECRET_KEY;
+
+
+/*
+  IMPORTANT:
+
+  Sandbox testing:
+  CASHFREE_MODE=sandbox
+
+  Live:
+  CASHFREE_MODE=production
+*/
 
 const CASHFREE_MODE =
   String(
@@ -37,7 +48,7 @@ const CASHFREE_API_VERSION =
 
 
 /* =====================================================
-   HELPER - CLEAN MOBILE NUMBER
+   CLEAN MOBILE
 ===================================================== */
 
 function cleanMobile(value) {
@@ -47,15 +58,19 @@ function cleanMobile(value) {
       .replace(/\D/g, "");
 
 
-  // +91XXXXXXXXXX
-  // 91XXXXXXXXXX
+  /*
+    +91 9876543210
+    becomes
+    9876543210
+  */
+
   if (
     mobile.length === 12 &&
     mobile.startsWith("91")
   ) {
 
     mobile =
-      mobile.slice(2);
+      mobile.substring(2);
 
   }
 
@@ -65,7 +80,7 @@ function cleanMobile(value) {
 
 
 /* =====================================================
-   HOME
+   HOME / HEALTH CHECK
 ===================================================== */
 
 app.get("/", (req, res) => {
@@ -86,7 +101,7 @@ app.get("/", (req, res) => {
 
 
 /* =====================================================
-   CREATE ORDER
+   CREATE CASHFREE ORDER
 ===================================================== */
 
 app.post(
@@ -96,25 +111,10 @@ app.post(
 
     try {
 
-      /*
-        Accept:
 
-        {
-          mobile:"9876543210"
-        }
-
-        OR
-
-        {
-          customer_phone:"9876543210"
-        }
-
-        OR
-
-        {
-          phone:"9876543210"
-        }
-      */
+      /* =========================================
+         GET MOBILE
+      ========================================= */
 
       const mobile =
         cleanMobile(
@@ -136,9 +136,9 @@ app.post(
       );
 
 
-      /* =========================
+      /* =========================================
          VALIDATE MOBILE
-      ========================= */
+      ========================================= */
 
       if (
         !/^[6-9]\d{9}$/.test(mobile)
@@ -158,9 +158,9 @@ app.post(
       }
 
 
-      /* =========================
-         CHECK KEYS
-      ========================= */
+      /* =========================================
+         CHECK CASHFREE KEYS
+      ========================================= */
 
       if (
         !CASHFREE_APP_ID ||
@@ -186,9 +186,9 @@ app.post(
       }
 
 
-      /* =========================
-         AMOUNT
-      ========================= */
+      /* =========================================
+         PAYMENT AMOUNT
+      ========================================= */
 
       const requestedAmount =
         Number(
@@ -200,7 +200,6 @@ app.post(
         !Number.isFinite(
           requestedAmount
         ) ||
-
         requestedAmount <= 0
       ) {
 
@@ -218,23 +217,15 @@ app.post(
       }
 
 
-      /*
-        For testing we keep ₹1 maximum
-        if frontend sends 1.
-
-        Later CEZOO actual total
-        can be passed here.
-      */
-
       const amount =
         Number(
           requestedAmount.toFixed(2)
         );
 
 
-      /* =========================
-         CREATE ORDER ID
-      ========================= */
+      /* =========================================
+         GENERATE ORDER ID
+      ========================================= */
 
       const orderId =
         "CEZOO_" +
@@ -246,6 +237,10 @@ app.post(
           .toUpperCase();
 
 
+      /* =========================================
+         GENERATE CUSTOMER ID
+      ========================================= */
+
       const customerId =
         "USER_" +
         mobile +
@@ -253,9 +248,9 @@ app.post(
         Date.now();
 
 
-      /* =========================
-         CASHFREE REQUEST
-      ========================= */
+      /* =========================================
+         REQUEST BODY
+      ========================================= */
 
       const requestBody = {
 
@@ -279,21 +274,35 @@ app.post(
         },
 
         order_note:
-          "CEZOO Cashfree payment"
+          "CEZOO Cashfree Payment"
 
       };
 
 
       console.log(
-        "Creating Cashfree order:",
+        "Creating Cashfree Order:",
         {
-          order_id: orderId,
-          amount: amount,
-          mobile: mobile,
-          mode: CASHFREE_MODE
+          order_id:
+            orderId,
+
+          amount:
+            amount,
+
+          mobile:
+            mobile,
+
+          mode:
+            CASHFREE_MODE,
+
+          url:
+            CASHFREE_BASE_URL
         }
       );
 
+
+      /* =========================================
+         CALL CASHFREE
+      ========================================= */
 
       const response =
         await axios.post(
@@ -328,39 +337,23 @@ app.post(
         );
 
 
-      const cashfreeData =
+      const data =
         response.data;
 
 
       console.log(
-        "Cashfree order created:",
-        {
-          order_id:
-            cashfreeData.order_id,
-
-          cf_order_id:
-            cashfreeData.cf_order_id,
-
-          order_status:
-            cashfreeData.order_status
-        }
+        "Cashfree Order Response:",
+        data
       );
 
 
-      /* =========================
-         PAYMENT SESSION CHECK
-      ========================= */
+      /* =========================================
+         CHECK SESSION
+      ========================================= */
 
       if (
-        !cashfreeData
-          ?.payment_session_id
+        !data?.payment_session_id
       ) {
-
-        console.error(
-          "payment_session_id missing:",
-          cashfreeData
-        );
-
 
         return res
           .status(502)
@@ -369,19 +362,19 @@ app.post(
             success: false,
 
             message:
-              "Cashfree did not return payment_session_id",
+              "payment_session_id not received from Cashfree",
 
             cashfree:
-              cashfreeData
+              data
 
           });
 
       }
 
 
-      /* =========================
+      /* =========================================
          SUCCESS
-      ========================= */
+      ========================================= */
 
       return res
         .status(200)
@@ -390,23 +383,22 @@ app.post(
           success: true,
 
           order_id:
-            cashfreeData.order_id,
+            data.order_id,
 
           cf_order_id:
-            cashfreeData.cf_order_id,
+            data.cf_order_id,
 
           payment_session_id:
-            cashfreeData
-              .payment_session_id,
+            data.payment_session_id,
 
           order_status:
-            cashfreeData.order_status,
+            data.order_status,
 
           amount:
-            cashfreeData.order_amount,
+            data.order_amount,
 
           currency:
-            cashfreeData.order_currency,
+            data.order_currency,
 
           mode:
             CASHFREE_MODE
@@ -415,6 +407,7 @@ app.post(
 
 
     } catch (error) {
+
 
       console.error(
         "CREATE ORDER ERROR:"
@@ -428,18 +421,17 @@ app.post(
       );
 
 
-      const statusCode =
-        error.response?.status ||
-        500;
-
-
       return res
-        .status(statusCode)
+        .status(
+          error.response?.status ||
+          500
+        )
         .json({
 
           success: false,
 
           message:
+
             error.response
               ?.data
               ?.message ||
@@ -471,6 +463,7 @@ app.get(
 
     try {
 
+
       const orderId =
         String(
           req.params.orderId || ""
@@ -495,6 +488,10 @@ app.get(
       }
 
 
+      /* =========================================
+         CHECK KEYS
+      ========================================= */
+
       if (
         !CASHFREE_APP_ID ||
         !CASHFREE_SECRET_KEY
@@ -515,6 +512,10 @@ app.get(
 
       }
 
+
+      /* =========================================
+         FETCH ORDER FROM CASHFREE
+      ========================================= */
 
       const response =
         await axios.get(
@@ -557,15 +558,15 @@ app.get(
 
 
       console.log(
-        "Verify order:",
+        "Payment Status:",
         orderId,
         orderStatus
       );
 
 
-      /* =========================
+      /* =========================================
          PAID
-      ========================= */
+      ========================================= */
 
       if (
         orderStatus === "PAID"
@@ -606,9 +607,9 @@ app.get(
       }
 
 
-      /* =========================
+      /* =========================================
          ACTIVE / PENDING
-      ========================= */
+      ========================================= */
 
       if (
         orderStatus === "ACTIVE"
@@ -643,9 +644,43 @@ app.get(
       }
 
 
-      /* =========================
+      /* =========================================
+         EXPIRED
+      ========================================= */
+
+      if (
+        orderStatus === "EXPIRED"
+      ) {
+
+        return res
+          .status(200)
+          .json({
+
+            success: true,
+
+            verified: true,
+
+            paid: false,
+
+            processing: false,
+
+            order_id:
+              data.order_id,
+
+            order_status:
+              orderStatus,
+
+            message:
+              "Payment order expired"
+
+          });
+
+      }
+
+
+      /* =========================================
          OTHER STATUS
-      ========================= */
+      ========================================= */
 
       return res
         .status(200)
@@ -676,6 +711,7 @@ app.get(
 
     } catch (error) {
 
+
       console.error(
         "VERIFY PAYMENT ERROR:"
       );
@@ -702,6 +738,7 @@ app.get(
           paid: false,
 
           message:
+
             error.response
               ?.data
               ?.message ||
@@ -745,12 +782,50 @@ app.use(
 
 
 /* =====================================================
+   ERROR HANDLER
+===================================================== */
+
+app.use(
+  (error, req, res, next) => {
+
+    console.error(
+      "SERVER ERROR:",
+      error
+    );
+
+
+    if (
+      res.headersSent
+    ) {
+
+      return next(error);
+
+    }
+
+
+    return res
+      .status(500)
+      .json({
+
+        success: false,
+
+        message:
+          "Internal server error"
+
+      });
+
+  }
+);
+
+
+/* =====================================================
    START SERVER
 ===================================================== */
 
 app.listen(
   PORT,
   "0.0.0.0",
+
   () => {
 
     console.log(
@@ -759,6 +834,10 @@ app.listen(
 
     console.log(
       `Cashfree mode: ${CASHFREE_MODE}`
+    );
+
+    console.log(
+      `Cashfree API URL: ${CASHFREE_BASE_URL}`
     );
 
   }
