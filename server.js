@@ -11,7 +11,7 @@ const PORT = process.env.PORT || 5000;
 
 
 /* =====================================================
-   CASHFREE CONFIG
+   CASHFREE PRODUCTION CONFIG
 ===================================================== */
 
 const CASHFREE_APP_ID =
@@ -22,26 +22,15 @@ const CASHFREE_SECRET_KEY =
 
 
 /*
-  IMPORTANT:
+  DIRECT PRODUCTION MODE
 
-  Sandbox testing:
-  CASHFREE_MODE=sandbox
-
-  Live:
-  CASHFREE_MODE=production
+  Sandbox completely removed from this code.
 */
 
-const CASHFREE_MODE =
-  String(
-    process.env.CASHFREE_MODE || "sandbox"
-  ).toLowerCase();
-
+const CASHFREE_MODE = "production";
 
 const CASHFREE_BASE_URL =
-  CASHFREE_MODE === "production"
-    ? "https://api.cashfree.com/pg"
-    : "https://sandbox.cashfree.com/pg";
-
+  "https://api.cashfree.com/pg";
 
 const CASHFREE_API_VERSION =
   "2025-01-01";
@@ -58,12 +47,7 @@ function cleanMobile(value) {
       .replace(/\D/g, "");
 
 
-  /*
-    +91 9876543210
-    becomes
-    9876543210
-  */
-
+  // +91 9876543210 -> 9876543210
   if (
     mobile.length === 12 &&
     mobile.startsWith("91")
@@ -93,7 +77,10 @@ app.get("/", (req, res) => {
       "Cashfree payment server is running",
 
     mode:
-      CASHFREE_MODE
+      CASHFREE_MODE,
+
+    api:
+      CASHFREE_BASE_URL
 
   });
 
@@ -168,7 +155,7 @@ app.post(
       ) {
 
         console.error(
-          "Cashfree API keys missing"
+          "Cashfree production API keys missing"
         );
 
 
@@ -179,7 +166,7 @@ app.post(
             success: false,
 
             message:
-              "Cashfree API keys missing in server"
+              "Cashfree production API keys missing in server"
 
           });
 
@@ -197,9 +184,7 @@ app.post(
 
 
       if (
-        !Number.isFinite(
-          requestedAmount
-        ) ||
+        !Number.isFinite(requestedAmount) ||
         requestedAmount <= 0
       ) {
 
@@ -224,7 +209,7 @@ app.post(
 
 
       /* =========================================
-         GENERATE ORDER ID
+         CREATE ORDER ID
       ========================================= */
 
       const orderId =
@@ -237,10 +222,6 @@ app.post(
           .toUpperCase();
 
 
-      /* =========================================
-         GENERATE CUSTOMER ID
-      ========================================= */
-
       const customerId =
         "USER_" +
         mobile +
@@ -249,7 +230,7 @@ app.post(
 
 
       /* =========================================
-         REQUEST BODY
+         CASHFREE ORDER BODY
       ========================================= */
 
       const requestBody = {
@@ -274,14 +255,15 @@ app.post(
         },
 
         order_note:
-          "CEZOO Cashfree Payment"
+          "CEZOO Payment"
 
       };
 
 
       console.log(
-        "Creating Cashfree Order:",
+        "Creating Cashfree PRODUCTION order:",
         {
+
           order_id:
             orderId,
 
@@ -296,12 +278,13 @@ app.post(
 
           url:
             CASHFREE_BASE_URL
+
         }
       );
 
 
       /* =========================================
-         CALL CASHFREE
+         CREATE ORDER
       ========================================= */
 
       const response =
@@ -316,6 +299,9 @@ app.post(
             headers: {
 
               "Content-Type":
+                "application/json",
+
+              "Accept":
                 "application/json",
 
               "x-api-version":
@@ -342,13 +328,29 @@ app.post(
 
 
       console.log(
-        "Cashfree Order Response:",
-        data
+        "Cashfree Order Created:",
+        {
+
+          order_id:
+            data?.order_id,
+
+          cf_order_id:
+            data?.cf_order_id,
+
+          status:
+            data?.order_status,
+
+          session_received:
+            Boolean(
+              data?.payment_session_id
+            )
+
+        }
       );
 
 
       /* =========================================
-         CHECK SESSION
+         SESSION CHECK
       ========================================= */
 
       if (
@@ -373,7 +375,7 @@ app.post(
 
 
       /* =========================================
-         SUCCESS
+         SUCCESS RESPONSE
       ========================================= */
 
       return res
@@ -401,7 +403,7 @@ app.post(
             data.order_currency,
 
           mode:
-            CASHFREE_MODE
+            "production"
 
         });
 
@@ -409,15 +411,15 @@ app.post(
     } catch (error) {
 
 
-      console.error(
-        "CREATE ORDER ERROR:"
-      );
-
-
-      console.error(
+      const cashfreeError =
         error.response?.data ||
-        error.message ||
-        error
+        null;
+
+
+      console.error(
+        "CREATE ORDER ERROR:",
+        cashfreeError ||
+        error.message
       );
 
 
@@ -431,18 +433,20 @@ app.post(
           success: false,
 
           message:
-
-            error.response
-              ?.data
-              ?.message ||
-
+            cashfreeError?.message ||
             error.message ||
-
             "Unable to create Cashfree order",
 
+          code:
+            cashfreeError?.code ||
+            null,
+
+          type:
+            cashfreeError?.type ||
+            null,
+
           cashfree_error:
-            error.response?.data ||
-            null
+            cashfreeError
 
         });
 
@@ -488,10 +492,6 @@ app.get(
       }
 
 
-      /* =========================================
-         CHECK KEYS
-      ========================================= */
-
       if (
         !CASHFREE_APP_ID ||
         !CASHFREE_SECRET_KEY
@@ -506,7 +506,7 @@ app.get(
             paid: false,
 
             message:
-              "Cashfree API keys missing in server"
+              "Cashfree production API keys missing"
 
           });
 
@@ -514,7 +514,7 @@ app.get(
 
 
       /* =========================================
-         FETCH ORDER FROM CASHFREE
+         FETCH ORDER STATUS
       ========================================= */
 
       const response =
@@ -527,6 +527,9 @@ app.get(
           {
 
             headers: {
+
+              "Accept":
+                "application/json",
 
               "x-api-version":
                 CASHFREE_API_VERSION,
@@ -558,9 +561,16 @@ app.get(
 
 
       console.log(
-        "Payment Status:",
-        orderId,
-        orderStatus
+        "Verify Payment:",
+        {
+
+          order_id:
+            orderId,
+
+          status:
+            orderStatus
+
+        }
       );
 
 
@@ -600,7 +610,7 @@ app.get(
               data.order_currency,
 
             mode:
-              CASHFREE_MODE
+              "production"
 
           });
 
@@ -608,7 +618,7 @@ app.get(
 
 
       /* =========================================
-         ACTIVE / PENDING
+         ACTIVE
       ========================================= */
 
       if (
@@ -637,7 +647,7 @@ app.get(
               data.order_amount,
 
             message:
-              "Payment is still pending"
+              "Payment is pending"
 
           });
 
@@ -712,15 +722,15 @@ app.get(
     } catch (error) {
 
 
-      console.error(
-        "VERIFY PAYMENT ERROR:"
-      );
-
-
-      console.error(
+      const cashfreeError =
         error.response?.data ||
-        error.message ||
-        error
+        null;
+
+
+      console.error(
+        "VERIFY PAYMENT ERROR:",
+        cashfreeError ||
+        error.message
       );
 
 
@@ -738,18 +748,12 @@ app.get(
           paid: false,
 
           message:
-
-            error.response
-              ?.data
-              ?.message ||
-
+            cashfreeError?.message ||
             error.message ||
-
             "Unable to verify payment",
 
           cashfree_error:
-            error.response?.data ||
-            null
+            cashfreeError
 
         });
 
@@ -782,43 +786,6 @@ app.use(
 
 
 /* =====================================================
-   ERROR HANDLER
-===================================================== */
-
-app.use(
-  (error, req, res, next) => {
-
-    console.error(
-      "SERVER ERROR:",
-      error
-    );
-
-
-    if (
-      res.headersSent
-    ) {
-
-      return next(error);
-
-    }
-
-
-    return res
-      .status(500)
-      .json({
-
-        success: false,
-
-        message:
-          "Internal server error"
-
-      });
-
-  }
-);
-
-
-/* =====================================================
    START SERVER
 ===================================================== */
 
@@ -833,7 +800,7 @@ app.listen(
     );
 
     console.log(
-      `Cashfree mode: ${CASHFREE_MODE}`
+      "Cashfree mode: production"
     );
 
     console.log(
